@@ -1,0 +1,378 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# In[35]:
+
+
+import sys
+#parse args to variables
+try:
+    script = sys.argv[0]
+    database = sys.argv[1]
+    server = sys.argv[2]
+    auditKey = sys.argv[3]
+    username = sys.argv[4]
+    password = sys.argv[5]
+    loadtype= sys.argv[6]
+    table = sys.argv[7]
+except Exception:
+    database = "Enter Database Name"
+    server = "Enter Server Name"
+    auditKey = "Enter Your Audit Key"
+    username = "Enter applicationID from Azure APP"
+    password = "Enter password from Azure APP"
+    loadtype="Enter Load type"
+
+
+#error log function needs predefined sql engine to log error to and error parameters
+def errorLog(engine, auditKey, e, detail=""):
+    import datetime
+    error_message = str(e).replace("'", "''") + detail
+    sql = f"""INSERT INTO log.Error 
+                (Audit_Key, [Error Code], [Error Description], [Date Time], [Package Name], [Source Name], [Source Description])
+              VALUES 
+                ('{auditKey}', 0, '{error_message}', '{datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}', 'Execute External Job', 'Execute External Job', 'Execute External Job')
+            """
+    with engine.begin() as conn:
+        conn.execute(sa.text(sql))
+    raise e
+# In[12]:
+
+
+#Import pyodbc to determine available drivers
+import pyodbc
+#find the best driver available
+driver_name = ''
+driver_names = [x for x in pyodbc.drivers() if x.endswith(' for SQL Server')]
+if driver_names:
+    driver_name = driver_names[0]
+else:
+    print('(No suitable driver found. Cannot connect.)')
+    
+#Import sql alchemy to enable connection
+import sqlalchemy as sa
+#Create a sql engine
+from sqlalchemy.engine import URL
+connection_string = "DRIVER={" + driver_name + "};SERVER=" + server + ";DATABASE=" + database + ";trusted_connection=yes"
+#connection_string = "DRIVER={SQL Server Native Client 11.0};Data Source=" + server + ";Initial Catalog=" + database + ";"
+connection_url = URL.create("mssql+pyodbc", query={"odbc_connect": connection_string})
+
+engine = sa.create_engine(connection_url)
+
+
+# In[13]:
+
+
+try:
+    import datetime
+    from datetime import datetime
+    from datetime import timedelta
+    from datetime  import date
+    import pandas as pd
+    from azure.identity import ClientSecretCredential
+    import json
+    import requests
+    from sqlalchemy import create_engine, text, MetaData
+    import numpy as np
+    import urllib.parse
+    import base64
+    from jira import JIRA
+    from bs4 import BeautifulSoup
+except Exception as e:
+    errorLog(engine,auditKey,e)
+    raise e
+
+
+# In[14]:
+
+try:
+    def getCreds():
+        creds=dict()
+        creds['access_token'] = 'Enter Access Token'
+        creds['client_id'] = 'Enter Client ID' # client id from facebook app IG Graph API Test
+        creds['client_secret'] = 'Enter Client Secret' # client secret from facebook app
+        creds['graph_domain'] = 'https://graph.facebook.com/' # base domain for api calls
+        creds['graph_version'] = 'v17.0' # version of the api we are hitting
+        creds['endpoint_base'] = creds['graph_domain'] + creds['graph_version'] + '/' # base endpoint with domain and version
+        creds['debug'] = 'no' # debug mode for api call
+        creds['page_id'] = 'Enter Page id' # users page id
+        creds['instagram_account_id'] = 'Enter Instagram Account ID' # users instagram account id
+        creds['User_id']='Enter ID'
+        return creds
+  
+except Exception as e:
+    errorLog(engine,auditKey,e)
+    raise e
+
+# In[15]:
+
+try:
+    def makeApiCall(url, endpointParams, debug='no' ):
+        data = requests.get(url, params=endpointParams, )  # make get request with proxy
+
+        response = dict()  # hold response info
+        response['url'] = url  # url we are hitting
+        response['endpoint_params'] = endpointParams  # parameters for the endpoint
+        response['endpoint_params_pretty'] = json.dumps(endpointParams, indent=4)  # pretty print for cli
+        response['json_data'] = json.loads(data.content)  # response data from the api
+        response['json_data_pretty'] = json.dumps(response['json_data'], indent=4)  # pretty print for cli
+        if 'yes' == debug:  # display out response info
+            displayApiCallData(response)  # display response
+
+        return response  # get and return content
+except Exception as e:
+    errorLog(engine,auditKey,e)
+    raise e
+
+# In[16]:
+
+try:
+    def displayApiCallData(response):
+        """Print out to CLI response from API call"""
+
+        print("\nURL: ")  # title
+        print(response['url'])  # display URL hit
+        print("\nEndpoint Params: ")  # title
+        print(response['endpoint_params_pretty'])  # display params passed to the endpoint
+        print("\nResponse: ")  # title
+        print(response['json_data_pretty'])  # make it look pretty for CLI
+
+except Exception as e:
+    errorLog(engine,auditKey,e)
+    raise e
+# In[17]:
+
+
+try:
+
+    def debugAccessToken(params):
+        endpointParams = dict()
+        endpointParams['input_token'] = params['access_token']
+        endpointParams['access_token'] = params['access_token']
+
+        url = params['graph_domain'] + '/debug_token'
+
+      
+
+        headers = {
+            'User-Agent': 'Enter User Agenet',
+            'Authorization': f'Bearer {params["access_token"]}',
+            'Accept-Encoding': '*',
+            'Connection': 'keep-alive'
+        }
+        print("Endpoint Params:")
+        print(endpointParams)
+        response = requests.get(url, params=endpointParams, headers=headers )
+
+        response_json = response.json()
+        return response_json
+
+    params = getCreds()
+    params['debug'] = 'yes'
+    response = debugAccessToken(params)
+
+    print("Full Response JSON:")
+    print(response)
+
+    print("\nToken Access Expires at: ")
+    expiration_timestamp = response['data']['data_access_expires_at']
+    print(datetime.fromtimestamp(expiration_timestamp))
+except Exception as e:
+    errorLog(engine,auditKey,e)
+    raise e
+
+
+
+
+
+
+
+# In[18]:
+
+try:
+    def getInstagramAccount(params):
+        """ Get Instagram account
+
+        API Endpoint:
+            https://graph.facebook.com/{graph-api-version}/{page-id}?access_token={your-access-token}&fields=instagram_business_account
+
+        Returns:
+            object: data from the endpoint
+        """
+
+        endpointParams = dict()  # parameter to send to the endpoint
+        endpointParams['access_token'] = params['access_token']  # tell Facebook we want to exchange token
+        endpointParams['fields'] = 'instagram_business_account'  # access token
+
+        url = params['endpoint_base'] + params['page_id']  # endpoint url
+
+
+        return makeApiCall(url, endpointParams, params['debug'])  # make the API call
+
+    # Rest of your code remains unchanged
+
+    params = getCreds()  # get creds
+    params['debug'] = 'no'  # set debug
+    response = getInstagramAccount(params)  # get debug info
+
+    print("\n---- INSTAGRAM ACCOUNT INFO ----\n")
+    print("Page Id:")  # label
+    print(response['json_data']['id'])  # display the page id
+    print("\nInstagram Business Account Id:")  # label
+    print(response['json_data']['instagram_business_account']['id'])  # display the Instagram account id
+
+
+
+    # In[19]:
+
+
+    def getUserPages(params, ):
+        """ Get facebook pages for a user
+
+        API Endpoint:
+            https://graph.facebook.com/{graph-api-version}/me/accounts?access_token={access-token}
+
+        Returns:
+            object: data from the endpoint
+        """
+
+        endpointParams = dict()  # parameter to send to the endpoint
+        endpointParams['access_token'] = params['access_token']  # access token
+
+        url = params['endpoint_base'] + 'me/accounts'  # endpoint url
+
+        return makeApiCall(url, endpointParams, params['debug'])  # make the api call
+
+    params = getCreds()  # get creds
+    params['debug'] = 'no'  # set debug
+
+    # Set up the proxy dictionary
+ 
+
+    response = getUserPages(params)  # get debug info
+
+    print("\n---- FACEBOOK PAGE INFO ----\n")  # section heading
+    print("Page Name:")  # label
+    print(response['json_data']['data'][0]['name'])  # display name
+    print("\nPage Category:")  # label
+    print(response['json_data']['data'][0]['category'])  # display category
+    print("\nPage Id:")  # label
+    print(response['json_data']['data'][0]['id'])  # display id
+except Exception as e:
+    errorLog(engine,auditKey,e)
+    raise e
+
+# In[20]:
+
+
+
+try:
+    def getUserMedia(params, pagingUrl=''):
+        """ Get users media
+        API Endpoint:
+            https://graph.facebook.com/{graph-api-version}/{ig-user-id}/media?fields={fields}&access_token={access-token}
+        Returns:
+            object: data from the endpoint
+        """
+        endpointParams = dict()
+        endpointParams['fields'] = 'id,caption,media_type,media_url,permalink,thumbnail_url,timestamp,username,like_count,insights.metric(plays,reach,comments,saved)'
+        endpointParams['access_token'] = params['access_token']
+
+        if '' == pagingUrl:
+            url = params['endpoint_base'] + params['instagram_account_id'] + '/media'
+        else:
+            url = pagingUrl
+
+        return makeApiCall(url, endpointParams, params['debug'])
+
+    def getUserStories(params):
+        """ Get user's stories
+        API Endpoint:
+            https://graph.facebook.com/{graph-api-version}/{ig-user-id}/stories?fields={fields}&access_token={access-token}
+        Returns:
+            object: data from the endpoint
+        """
+        endpointParams = dict()
+        endpointParams['fields'] = 'id,media_type,media_url,permalink,thumbnail_url,timestamp'
+        endpointParams['access_token'] = params['access_token']
+
+        url = params['endpoint_base'] + params['instagram_account_id'] + '/stories'
+        return makeApiCall(url, endpointParams, params['debug'])  
+
+
+    params = getCreds()
+    params['debug'] = 'no'
+  
+    response = getUserMedia(params)  
+    post_data_list = []
+
+    def handleNone(value, default_value):
+        return value if value is not None else default_value
+
+    def iteratePages(response, ):
+        for post in response['json_data']['data']:
+        # Extract play count and reach count from insights
+            insights = post.get('insights')
+            play_count = None
+            reach_count = None
+            if insights and 'data' in insights:
+                for insight in insights['data']:
+                    if insight['name'] == 'plays':
+                        play_count = insight['values'][0]['value']
+                    elif insight['name'] == 'reach':
+                        reach_count = insight['values'][0]['value']
+                    elif insight['name'] == 'comments':  # Add this block
+                        comment_count = insight['values'][0]['value']
+                    elif insight['name'] == 'saved':  # Add this block
+                        saved_count = insight['values'][0]['value']
+
+            # Check if 'caption' key exists in the post dictionary
+            post_caption = post.get('caption', 'N/A')
+
+            post_data = {
+                'Link to post': post['permalink'],
+                'Post caption': post_caption,
+                'Media type': post['media_type'],
+                'Posted at': post['timestamp'],
+                'Like count': handleNone(post.get('like_count'), 0),
+                'Play count': handleNone(play_count, 0),
+                'Reach count': handleNone(reach_count, 0),
+                'Comment Count': handleNone(comment_count, 0),
+                'Saved_Count':handleNone(saved_count, 0)
+            }
+            post_data_list.append(post_data)
+
+        if 'paging' in response['json_data'] and 'next' in response['json_data']['paging']:
+            next_page_url = response['json_data']['paging']['next']
+            next_response = getUserMedia(params, next_page_url)
+            iteratePages(next_response)
+
+
+
+
+
+
+    # Call the function to iterate through all pages
+    iteratePages(response)  # Pass the 'proxy' parameter
+
+    df = pd.DataFrame(post_data_list)
+    df['Pull Date'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    df
+except Exception as e:
+    errorLog(engine,auditKey,e)
+    raise e
+
+# In[21]:
+
+
+try:
+         df.to_sql(
+            name ="Enter Table Name", 
+            schema ="Enter Schema", 
+            con=engine, 
+            index=False, 
+            if_exists = "append"
+        )
+except Exception as e:
+    errorLog(engine, e)
+    raise e
